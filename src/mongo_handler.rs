@@ -3,7 +3,7 @@ pub mod mongo_handler {
 use mongodb::{Client, options::ClientOptions};
 use mongodb::bson::{doc, Document};
 use log::{info, warn, error};
-    pub async fn get_document(client: &Client, db: &str, coll_name: &str, id: &str ) -> Document{
+    pub async fn get_document(client: &Client, db: &str, coll_name: &str, id: &str ) -> Document {
         let db = client.database(db);
         let collection = db.collection::<Document>(coll_name);
         let query = doc! { "name" : id };
@@ -23,7 +23,19 @@ use log::{info, warn, error};
         let update_result = collection.update_one(query, doc, None).await.unwrap();
         info!("{:?}",update_result);
         
-}
+        }
+
+
 
 
 }
+
+// pub mod data_transformation {
+//     use serde::{Serialize, Deserialize};
+//     use bson::{bson, Document};
+//     let bson_doc: Document = bson::to_document(&my_instance).expect("Failed to serialize to BSON");
+            
+    
+
+
+// }

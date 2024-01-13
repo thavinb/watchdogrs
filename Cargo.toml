@@ -8,7 +8,8 @@ edition = "2021"
 [dependencies]
 mongodb = "2.6.1"
 tokio = { version = "1", features = ["full"] }
-log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"]  } 
+# log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"]  } 
+log = { version = "0.4.2" }
 env_logger = "*"
 notify = "6.1.1"
 time = "0.3.28"
@@ -16,3 +17,4 @@ regex = "1.9.5"
 md-5 = "0.10.6"
 hex = "0.4.3"
 hex-literal = "0.4.1"
+chrono = "0.4.31"

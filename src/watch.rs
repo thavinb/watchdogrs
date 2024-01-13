@@ -43,462 +43,759 @@ pub mod watch {
 		// Add a path to be watched. All files and directories at that path and
 		// below will be monitored for changes.
 		watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
-
-		for res in rx {
+		for res in &rx {
 			match res {
 				Message::Event(e) => {
                     match e {
-                        Ok(event) => check_event(&path, event),
-                        Err(error) => log::error!("Error: {error:?}")
+                        Ok(event) => {
+                            match event.kind {
+                                EventKind::Create(kind) => {
+                                    handle_create_event(&path.as_ref(), event);
+                                    // match handle_create_event(&path.as_ref(), event) {
+                                    //     PathType::Dir(result) => {
+                                    //         if let Err(e) = result {
+                                    //             log::warn!("{:?}",e);
+                                    //         } else {
+                                    //             ()
+                                    //         }
+                                    //     }
+                                    //     PathType::File(x) => {
+                                    //        // TODO: handle struct then upload  
+                                    //        // TODO: handle mongo status
+
+                                    //     }
+                                    // }
+
+                                }
+                                _ => {
+                                    PathType::None;
+                                }
+                                // EventKind::Modify(ModifyKind) => {
+                                //     // If path is dir
+                                //     // Check complete/incomplete tag
+                                //     //     Warn if incomplete!
+                                //     // else if file
+                                //     // check if it is incomplete fastq file 
+                                //     // if not warn!
+                                // }
+                                // EventKind::Remove(RemoveKind) => {},
+                                //     // If path is dir
+                                //     // Warn!
+                                //     // else if file 
+                                //     // check if it is incomplete fastq file
+                                //     // if not warn!
+                                // EventKind::Access(AccessKind) => {}
+                                // EventKind::Any => {}
+                                // EventKind::Other => {}
+                                // // let data = check_event(&path, event).unwrap();
+                            // // data update
+                            // // mongohandiling(package, event)
+                            }
+                        }
+                         Err(error) => {
+                                log::error!("Error: {error:?}");
+                        }
                     }
-				},
-				Message::Scan(e) => println!("Scan event {e:?}"),
+				}
+				Message::Scan(e) => {
+                    println!("Scan event {e:?}");
+                },
+                // data checkfile
+                // mongohandling(package, scan)
 			}
 		}
 
 		Ok(())
 	}
-
-    enum UploadStatus {
-        Done(File),
-        Uploading(File),
-        Missing
-    }
-
-    enum ChecksumStatus  {
-        Passed(Packages),
-        Failed(Packages)
-    }
     
-    enum Packages { 
-        Fastq1(std::path::PathBuf),
-        Fastq2(std::path::PathBuf),
-        Fqstat1(std::path::PathBuf),
-        Fqstat2(std::path::PathBuf),
-        Md51(std::path::PathBuf),
-        Md52(std::path::PathBuf),
-        Report(std::path::PathBuf)
+    use super::utils_checkfile::{validate_create_dir, validate_create_file, FileInfo, FileError, DirError};
+    use std::fmt::Display;
+    
+    #[derive(Debug)]
+    pub enum PathType {
+        Dir(Result<(),DirError>),
+        File(Result<FileInfo,FileError>),
+        None
     }
 
-    struct File { 
-        sampleID : u8,
-        file: Packages,
-    }
-
-    struct SampleList {
-        sampleID : String,
-        basename : String,
-        dirpath : String,
-        fastq_1 : UploadStatus,
-        fastq_2 : UploadStatus,
-        fqstat_1 : UploadStatus,
-        fqstat_2 : UploadStatus,
-        md5_1 : UploadStatus,
-        md5_2 : UploadStatus,
-        report : UploadStatus
-    }
-
-    impl SampleList {
-        fn new(
-            sampleID : String,
-            dirpath : String,
-        ) -> Self {
-            Self { 
-                sampleID: String::from("non"),
-                basename: String::from("non"),
-                dirpath,
-                fastq_1: UploadStatus::Missing,
-                fastq_2: UploadStatus::Missing,
-                fqstat_1: UploadStatus::Missing,
-                fqstat_2: UploadStatus::Missing,
-                md5_1: UploadStatus::Missing,
-                md5_2: UploadStatus::Missing,
-                report: UploadStatus::Missing
-            }
-
-        } 
-        fn validate(){
-
-        }
-        fn checksum(){
-
-        }
-
-    }
-
-    struct Basnename{
-        ThaiOmicID: String,
-        CustomerID: String,
-        CustomerIndex: u8,
-        FlowcellID: String,
-        LaneID: String,
-        FlowcellIndex: u8
-    }
-
-    // get event and path 
-    // make data structure for event and path 
-    fn check_event<P: AsRef<Path>>(watched_path: P, mut event: notify::Event){
-        // let dirPattern = 
+    fn handle_create_event(watched_path: &Path, mut event: notify::Event) -> PathType {
         let path = event.paths.pop().unwrap();
-        // let re = Regex::new(r"(B\w+):(\w+)_([0-9]+)-(\w+)_(\w+)_(\w+)[_.](\w+)[_.](\w+)\.*(\w+)*\.*(\w+)*\.*(\w+)*").unwrap(); 
-        let re_dir = Regex::new(r"(D[0-9]+)_(E[0-9]+)_(20[0-9][0-9])([01][0-9])([123][0-9])").unwrap();
-        let re_basename = Regex::new(r"(?<tmp>\.?)(?<thaiomic_id>D[0-9]+)_(?<customer_id>[0-9]+)_(?<customer_index>[0-9]{2})-(?<flowcell_id>E[0-9]+)_(?<lane_id>L[0-9]{2})_(?<flowcell_index>[0-9]+)").unwrap();
-        let set = [r"(1)\.(fq)\.(gz)(.?\w{0,6})$",
-             r"(2)\.(fq)\.(gz)(.?\w{0,6})$",
-             r"(1)\.(fq)\.(gz)\.(\w{32}).md5.txt$",
-             r"(2)\.(fq)\.(gz)\.(\w{32}).md5.txt$",
-             r"(1)\.(fq)\.(fqStat)\.(txt)$",
-             r"(2)\.(fq)\.(fqStat)\.(txt)$",
-             r"(report)\.(html)$"];
-        let re_set = RegexSet::new(&set).unwrap();
-        let re_fastq = Regex::new(r"([12])\.(fq)\.(gz)$").unwrap(); 
-        let re_md5 = Regex::new(r"([12])\.(fq)\.(gz)\.(\w{32}).txt$").unwrap();
-        let re_fqstat = Regex::new(r"([12])\.(fq)\.(fqStat)\.(txt)$").unwrap(); 
-        let re_report = Regex::new(r"(report)\.(html)$").unwrap();
-        let dir_path = path.parent().unwrap();
-        match event.kind { 
-            EventKind::Create(event) => {
-                 if path.is_dir()  {
-                    log::debug!("EventKind::Create(Folder) : {:?}", path);
-                    let path = path.to_str().unwrap();
-                    // TODO: catch all regrex error appropiately 
-                    // TODO: If dir is not watched_path 
-                    if dir_path != watched_path.as_ref() {
-                        log::debug!("{} : {}", dir_path.to_str().unwrap(), watched_path.as_ref().to_str().unwrap());
-                        log::warn!("New Directory is written into Existing directory!");
-                        log::error!("Unexpected directory get uploaded as subdirectory: {}", &path);
-                        // TODO: AlERT
-                        panic!(r"Unexpected directory get uploaded as subdirectory!");
-                    } else {
-                        if let Some(dir) = extract_dir(path, re_dir) {
-                            let (dir_thaiomic_id, dir_flowcell_id, dir_year, dir_month, dir_day) = dir ;
-                            let id_name = format!("{}-{}", dir_thaiomic_id, dir_flowcell_id);
-                            log::info!("[{}]: Directory is uploaded to watched directory!", id_name);
-                            // TODO: POST in DB
-                        } else {
-                            log::warn!("Directory with unexpected pattern is uploaded to watched directory!: {}", &path);
-                            // TODO: ALERT 
-                        }
-                    }
-                 } else if let Some(dir) = extract_dir(dir_path.file_name().unwrap().to_str().unwrap(), re_dir) { 
-                    log::debug!("EventKind::Create(File): {:?}", path);
-
-                    // get dir path
-                    let (dir_thaiomic_id, dir_flowcell_id, dir_year, dir_month, dir_day) = dir ;
-                    let id_name = format!("{}-{}", dir_thaiomic_id, dir_flowcell_id);
-                    
-                    /* log::debug!("{:?}", re_basename.captures(path)); */
-                    let path = path.to_str().unwrap();
-                    // TODO: catch all regrex error appropiately
-                    if let Some(basename) = re_basename.captures(path) {
-                 
-                        //Check tmp status
-                        let tmp_status: bool = if &basename["tmp"] == "" {
-                            false
-                        } else {
-                            log::debug!("Temporary file found: {:?}", path);
-                            true
-                        };
-
-                        let thaiomic_id = &basename["thaiomic_id"];
-                        let flowcell_id = &basename["flowcell_id"];
-                        let customer_id = &basename["customer_id"];
-                       
-                        // Check if id in filename matced with dirname
-                        if (dir_thaiomic_id != thaiomic_id) | (dir_flowcell_id != flowcell_id) {
-                            log::warn!("Conflict found in {:?}", &path);
-                            if dir_thaiomic_id != thaiomic_id {
-                                log::warn!("[{}]: ThaiomicID {} do not match with directory!", id_name, thaiomic_id);
-                            }
-                            if dir_flowcell_id != flowcell_id {
-                                log::warn!("[{}]: FlowcellID {} do not match with directory!", id_name, flowcell_id);
-                            }
-                        }
-                        
-                        // Check if suffix match with any expected pattern
-                        let set_check: Vec<_> = re_set.matches(&path).into_iter().collect();
-                        if set_check.len() > 1 {
-                            log::error!("[{}][{}]: Filename {:?} matched with multiple pattern!", id_name, customer_id, &path);
-                            for i in set_check.iter() {
-                                log::error!("[{}][{}]: Pattern matched {:?}", id_name, customer_id,  set[*i]);
-                            }
-                        } else if set_check.len() < 1 {
-                            log::error!("[{}][{}]]: Filename {:?} do not matched with any pattern!", id_name, customer_id, &path);
-                        } else if set_check.len() == 1 {
-                            match set_check[0] {
-                                0 => {
-                                    log::debug!("[{}][{}]: FWD_FQ found {:?}", id_name, customer_id, &path);
-                                    if tmp_status {
-                                        log::info!("[{id_name}][{customer_id}]: FWD_FQ start uploading");
-                                    } else {
-                                        log::info!("[{id_name}][{customer_id}]: FWD_FQ finished uploading");
-                                        checksum(path.into(), "eeedc9e391d72f70f6c59bff62db4d24");
-                                        // let (md5, status) = checksum(path.into(), "eeedc9e391d72f70f6c59bff62db4d24");
-                                        // println!("{:?}, {:?}" , md5 , status);
-                                        // TODO: MD5
-                                        // TODO: POST
-                                        // TODO: GET all file to check 
-                                    }
-                                },
-                                1 => {
-                                    log::debug!("[{}][{}]: RVS_FQ found {:?}", id_name, customer_id, &path);
-                                    if tmp_status {
-                                        log::info!("[{id_name}][{customer_id}]: RVS_FQ start uploading");
-                                    } else {
-                                        log::info!("[{id_name}][{customer_id}]: RVS_FQ finished uploading");
-                                        // TODO: MD5
-                                        // TODO: POST
-                                        // TODO: GET all file to check 
-                                    }
-                                },
-                                2 => {
-                                    log::debug!("[{}][{}]: FWD_MD5 found: {:?}", id_name, customer_id, &path);
-                                    let (fwd, md5) = extract_md5(path, Regex::new(set[2]).unwrap());
-                                    let mate: i8 = fwd.parse().unwrap();
-                                    if mate != 1 { log::error!("{} not equal 1 when it should be 1", fwd); }
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::info!("[{id_name}][{customer_id}]: FWD_MD5 finished uploading - {md5}");
-                                },
-                                3 => {
-                                    log::debug!("[{}][{}]: RVS_MD5 found: {:?}", id_name, customer_id, &path);
-                                    let (rvs, md5) = extract_md5(path, Regex::new(set[3]).unwrap());
-                                    let mate: i8 = rvs.parse().unwrap();
-                                    if mate != 2 { log::error!("{} not equal 2 when it should be 2", rvs); }
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::info!("[{id_name}][{customer_id}]: FWD_MD5 finished uploading - {md5}");
-                                },
-                                4 => {
-                                    log::debug!("[{}][{}]: FWD_STAT found: {:?}", id_name, customer_id, &path);
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::info!("[{id_name}][{customer_id}]: FWD_STAT finished uploading");
-                                },
-                                5 => {
-                                    log::debug!("[{}][{}]: RVS_STAT found: {:?}", id_name, customer_id, &path);
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::info!("[{id_name}][{customer_id}]: FWD_STAT finished uploading");
-                                },
-                                6 => {
-                                    log::debug!("[{}][{}]: REPORT found: {:?}", id_name, customer_id, &path);
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::info!("[{id_name}][{customer_id}]: HTML_REPORT finished uploading");
-                                },
-                                _ => {}
-                            }
-                        }
-                    } else {
-                        log::error!("[{}]: File {:?} not matched with expected pattern! [(?<tmp>\\.?)(?<thaiomic_id>D[0-9]+)_(?<customer_id>[0-9]+)_(?<customer_index>[0-9]{{2}})-(?<flowcell_id>E[0-9]+)_(?<lane_id>L[0-9]{{2}})_(?<flowcell_index>[0-9]+)]", id_name, &path);
-                    }
-                } else {
-                    //dir not match 
-                    // TODO: Check if root folder
-                    log::warn!("File is uploaded into watched directory directly!: {:?}", &path);
-                    // TODO: Following the same criteria
-                }               
-           },
-            EventKind::Modify(event) => {
-                if path.is_dir()  {
-                    log::debug!("EventKind::Modify(Folder) : {:?}", path);
-                    let path = path.to_str().unwrap();
-                    // TODO: catch all regrex error appropiately 
-                    if let Some(dir) = extract_dir(path, re_dir) {
-                        let (dir_thaiomic_id, dir_flowcell_id, dir_year, dir_month, dir_day) = dir ;
-                        let id_name = format!("{}-{}", dir_thaiomic_id, dir_flowcell_id);
-                        log::info!("[{}]: Directory is getting update!", id_name);
-                        // TODO: POST in DB
-                    } else {
-                        // TODO: Check if dir is root
-                        // TODO: error! if not root
-                        if dir_path != watched_path.as_ref() {
-                            log::error!("Unknown directory is getting update!: {}", &path);
-                        }
-                    }
-                } else if let Some(dir) = extract_dir( dir_path.file_name().unwrap().to_str().unwrap(), re_dir ) {
-                    log::debug!("EventKind::Modify(File): {:?}", &path);
-
-                    // get dir path
-                    let (dir_thaiomic_id, dir_flowcell_id, dir_year, dir_month, dir_day) = dir ;
-                    let id_name = format!("{}-{}", dir_thaiomic_id, dir_flowcell_id);
-                    
-                    /* log::debug!("{:?}", re_basename.captures(path)); */
-                    let path = path.to_str().unwrap();
-                    // TODO: catch all regrex error appropiately
-                    if let Some(basename) = re_basename.captures(path) {
-                 
-                        //Check tmp status
-                        let tmp_status: bool = if &basename["tmp"] == "" {
-                            log::error!("Non-temporary file is getting update: {:?}, Please notify transferring procedure with sender", path);
-                            false
-                        } else {
-                            true
-                        };
-
-                        let thaiomic_id = &basename["thaiomic_id"];
-                        let flowcell_id = &basename["flowcell_id"];
-                        let customer_id = &basename["customer_id"];
-                       
-                        // Check if id in filename matced with dirname
-                        if (dir_thaiomic_id != thaiomic_id) | (dir_flowcell_id != flowcell_id) {
-                            log::warn!("Conflict found in {:?}", &path);
-                            if dir_thaiomic_id != thaiomic_id {
-                                log::warn!("[{}]: ThaiomicID {} do not match with directory!", id_name, thaiomic_id);
-                            }
-                            if dir_flowcell_id != flowcell_id {
-                                log::warn!("[{}]: FlowcellID {} do not match with directory!", id_name, flowcell_id);
-                            }
-                        }
-                        
-                        // Check if suffix match with any expected pattern
-                        let set_check: Vec<_> = re_set.matches(&path).into_iter().collect();
-                        if set_check.len() > 1 {
-                            log::error!("[{}][{}]: Filename {:?} matched with multiple pattern!", id_name, customer_id, &path);
-                            for i in set_check.iter() {
-                                log::error!("[{}][{}]: Pattern matched {:?}", id_name, customer_id,  set[*i]);
-                            }
-                        } else if set_check.len() < 1 {
-                            log::error!("[{}][{}]]: Filename {:?} do not matched with any pattern!", id_name, customer_id, &path);
-                        } else if set_check.len() == 1 {
-                            match set_check[0] {
-                                0 => {
-                                    log::debug!("[{}][{}]: FWD_FQ is writing {:?}", id_name, customer_id, &path);
-                                    let meta = fs::metadata(&path).unwrap();
-                                    let filesize = meta.size();
-                                    if tmp_status {
-                                        log::info!("[{id_name}][{customer_id}]: FWD_FQ upload in progress - {filesize}b");
-                                    } else {
-                                        log::warn!("[{id_name}][{customer_id}]: Non-temporary FWD_FQ is uploading");
-                                        log::info!("[{id_name}][{customer_id}]: FWD_FQ upload in progress - {filesize}b");
-                                        // TODO: MD5
-                                        // TODO: POST
-                                        // TODO: GET all file to check 
-                                    }
-                                },
-                                1 => {
-                                    log::debug!("[{}][{}]: RVS_FQ is writing {:?}", id_name, customer_id, &path);
-                                    let meta = fs::metadata(&path).unwrap();
-                                    let filesize = meta.size();
-                                    if tmp_status {
-                                        log::info!("[{id_name}][{customer_id}]: RVS_FQ upload in progress - {filesize}b");
-                                    } else {
-                                        log::warn!("[{id_name}][{customer_id}]: Non-temporary FWD_FQ is uploading");
-                                        log::info!("[{id_name}][{customer_id}]: RVS_FQ upload in progress - {filesize}b");
-                                        // TODO: MD5
-                                        // TODO: POST
-                                        // TODO: GET all file to check 
-                                    }
-                                },
-                                2 => {
-                                    let meta = fs::metadata(&path).unwrap();
-                                    let filesize = meta.size();
-                                    log::warn!("[{}][{}]: FWD_MD5 is writing: {:?} - {filesize}b", id_name, customer_id, &path);
-                                    log::debug!("[{}][{}]: FWD_MD5 is writing: {:?}", id_name, customer_id, &path);
-                                    let (fwd, md5) = extract_md5(path, Regex::new(set[2]).unwrap());
-                                    let mate: i8 = fwd.parse().unwrap();
-                                    if mate != 1 { log::error!("{} not equal 1 when it should be 1", fwd); }
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::warn!("[{id_name}][{customer_id}]: FWD_MD5 finished uploading - {md5}");
-                                },
-                                3 => {
-                                    let meta = fs::metadata(&path).unwrap();
-                                    let filesize = meta.size();
-                                    log::warn!("[{}][{}]: RVS_MD5 is writing: {:?} - {filesize}b", id_name, customer_id, &path);
-                                    log::debug!("[{}][{}]: RVS_MD5 is writing: {:?}", id_name, customer_id, &path);
-                                    let (rvs, md5) = extract_md5(path, Regex::new(set[3]).unwrap());
-                                    let mate: i8 = rvs.parse().unwrap();
-                                    if mate != 2 { log::error!("{} not equal 2 when it should be 2", rvs); }
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::warn!("[{id_name}][{customer_id}]: FWD_MD5 finished uploading - {md5}");
-                                },
-                                4 => {
-                                    log::warn!("[{}][{}]: FWD_STAT is writing: {:?}", id_name, customer_id, &path);
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::warn!("[{id_name}][{customer_id}]: FWD_STAT finished uploading");
-                                },
-                                5 => {
-                                    log::warn!("[{}][{}]: RVS_STAT is writing: {:?}", id_name, customer_id, &path);
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::warn!("[{id_name}][{customer_id}]: FWD_STAT finished uploading");
-                                },
-                                6 => {
-                                    log::warn!("[{}][{}]: REPORT is writing: {:?}", id_name, customer_id, &path);
-                                    // TODO: Warn if tmp as file is unexpectly large.
-                                    log::warn!("[{id_name}][{customer_id}]: HTML_REPORT finished uploading");
-                                },
-                                _ => {}
-                            }
-                        }
-                    } else {
-                        log::error!("[{}]: File {:?} not matched with expected pattern! [(?<tmp>\\.?)(?<thaiomic_id>D[0-9]+)_(?<customer_id>[0-9]+)_(?<customer_index>[0-9]{{2}})-(?<flowcell_id>E[0-9]+)_(?<lane_id>L[0-9]{{2}})_(?<flowcell_index>[0-9]+)]", id_name, &path);
-                    }
-                } else {
-                    //dir not match 
-                    // TODO: Check if root folder
-                    log::warn!("File is writing into watched directory directly!")
-                    // TODO: Following the same criteria
-                } 
-
-            },
-            EventKind::Remove(event) => {
-                log::debug!("EventKind::Remove(Any): {:?}", &path);
-                log::warn!("{:?} is removed", &path);
-            },
-            _ => {},
-            
-        }
-             
-    }
-
-
-    pub fn extract_dir(path: &str, pattern: Regex) -> Option<(&str,&str,&str,&str,&str)>{
-        let dir_name: Option<(&str,&str,&str,&str,&str)> = pattern.captures(path).map( |c| {
-            let (_, [thaiomic_id, flowcell_id, year, month, day]) = c.extract();
-            (thaiomic_id, flowcell_id, year, month, day)
-        });
-        dir_name
-    }
-    pub fn extract_fastq(path:&str , pattern: Regex) -> &str {
-        let fq_mate: &str = pattern.captures(path).map(|c| {
-            let (mate, [_]) = c.extract();
-            mate
-        }).unwrap();
-        fq_mate
-    }
-    pub fn extract_fqstat(path:&str , pattern: Regex) -> &str {
-        let stat_mate: &str = pattern.captures(path).map(|c| {
-            let (mate, [_]) = c.extract();
-            mate
-        }).unwrap();
-        stat_mate
-    }
-
-    pub fn extract_md5(path: &str , pattern: Regex) -> (&str, &str) {
-        let md5: (&str,&str) = pattern.captures(path).map(|c| {
-            let (_, [mate, suffix1, suffix2, md5]) = c.extract();
-            (mate,md5)
-        }).unwrap();
-        md5
-    }
-    pub async fn checksum(file: PathBuf, md5: &str) -> (String, bool) {
-        log::debug!("Computing MD5...");
-        let mut file = fs::File::open(&file).unwrap(); 
-        let mut hasher = Md5::new();
-        let n = io::copy(&mut file, &mut hasher).unwrap();
-        let hash = hasher.finalize();
-        let computed_md5 = format!("{:x}", hash);
-        if computed_md5 == md5 {
-            log::info!("{computed_md5}, true");
-            println!("{computed_md5}, true");
-            (computed_md5, true)
+        if path.is_dir() {
+            log::debug!("Directory of: {:?} is created", &path);
+            PathType::Dir(validate_create_dir(&watched_path, &path.as_path()))
         } else {
-            println!("{computed_md5}, false");
-            (computed_md5, false)
+            log::debug!("File of: {:?} is created", &path);
+            PathType::File(validate_create_file(&watched_path, &path.as_ref()))
         }
     }
 
+    // fn handle_modify_event<P: AsRef<Path>>(watched_path: P, mut event: notify::Event) {
+    //     let path = event.paths.pop().unwrap();
+    //     if path.is_dir() {
+    //         // check dir not mark as finish
+    //         // ignore if not
+    //         validate_modify_dir(watched_path, path);
+    //     } else {
+    //         // check parent dir not mark as finish
+    //         // check for only fastq 
+    //         // warn if not 
+    //         validate_modify_file(watched_path, &path);
+    //     }
+    // }
 
-    
+    // fn handle_remove_event<P: AsRef<Path>>(watched_path: P, mut event: notify::Event) {
+    //     let path = event.paths.pop().unwrap();
+    //     if path.is_dir() {
+    //         // check dir not mark as finish
+    //         // ignore if not
+    //         validate_remove_dir(watched_path, path);
+    //     } else {
+    //         // check parent dir not mark as finish
+    //         // check for only fastq 
+    //         // warn if not 
+    //         validate_remove_file(watched_path, &path);
+    //     }
+    // }
+
+   
 }
 
 
 
 
+mod utils_checkfile {
 
+    use std::fs::File;
+    use std::io::{self, Read, BufRead};
+	use std::path::{Path, PathBuf};
+    use regex::Captures;
+    use regex::{Regex, RegexSet};
+    use md5::{Md5, Digest};
+	use hex::ToHex;
+    use std::sync::mpsc::channel;
+    use std::thread;
+
+    #[derive(Clone,Debug)]
+    pub enum FileType {
+        FQ(i32, FileStatus),
+        MD5_1(i32),
+        MD5_2(i32, Option<String>),
+        FQSTAT(i32),
+        Report
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub enum FileStatus {
+        Finish,
+        Pending
+    }
+
+    #[derive(Debug)]
+    pub enum FileError {
+        ParentDirIsRoot(String),
+        ParentDirIsSubdir(String),
+        UnknownExtension(String),
+        FilePatternError(PatternError),
+        PatternConflict(String),
+            // ROOT 
+            // INCORRECT DIR
+    }
+
+    #[derive(Debug)]
+    pub enum PatternError {
+        IdError(String),
+        FlowcellIdError(String),
+        FlowcellIdxError(String),
+        CustomerIdError(String),
+        CustomerIdxError(String),
+        LaneIdError(String),
+        DateYearError(String),
+        DateMonthError(String),
+        DateDayError(String),
+        Others(String)
+    }
+
+    #[derive(Debug)]
+    pub enum DirError {
+        NonRootDirError(String),
+        DirPatternError(PatternError),
+    }
+
+
+    pub fn validate_create_dir<P: AsRef<Path>>(watched_path: P, path: P) -> Result<(),DirError> {
+        /* 
+         * Function take watched path and event.paths from notify::Event crate 
+         * Function return 
+         *      Ok - Dir struct for GET/POST
+         *      Err - if any validation steps fail.
+         * Function check for 2 things:
+         *  - First is validating the path of directory, the path must not
+         *    be anywhere except at the watched directory
+         *  - Second is validating the pattern of directory, the pattern must 
+         *    consist of all following section:
+         *
+         *    Example: D2303_E200007213_20231024
+         *
+         *      - Thaiomic ID 
+         *      - Flowcell ID
+         *      - Timestamp (YYYYMMDD)
+         *
+         * TODO: catch following pattern
+         *          - Err subfolder 
+         *          - Err wrong pattern
+         * 
+         */        
+            // Subfolder check
+            let parent_dir = path.as_ref().parent().unwrap();
+            if parent_dir != watched_path.as_ref() {
+                log::warn!("Directory {:?} is not create on watched directory", path.as_ref().display().to_string());
+                Err(DirError::NonRootDirError(path.as_ref().display().to_string()))
+            } else {
+
+            // get dir pattern
+                match validate_pattern_dir(&path.as_ref().display().to_string()) {
+                    Ok(captures) => { 
+                        log::debug!("Succecfully validate directory pattern {:?}", captures.get(0).map_or("", |m| m.as_str())); 
+                        Ok(())
+                        // TODO: GET
+                        // TODO: POST
+                        // TODO: Get status
+                        },
+                    Err(vec_err) => {
+                        // TODO: handle each err in vector
+                        log::warn!("Failed valaidating directory pattern of {:?}", path.as_ref().display().to_string());
+                        log::warn!("{:?}", vec_err);
+                        Err(DirError::DirPatternError(PatternError::Others(path.as_ref().display().to_string())))
+                    }
+                }
+            }
+    }
+	
+
+    #[derive(Debug)]
+    pub struct FileInfo {
+        parent_dir: String,
+		basename: String,
+        thaiomic_id: Option<String>,
+        customer_id: Option<String>,
+        customer_idx: Option<String>,
+        flowcell_id: Option<String>,
+        flowcell_idx: Option<String>,
+        lane_id: Option<String>,
+        thaiomic_code: Option<String>,
+		mate: i32,
+        file_type: FileType,
+        file_path: String,
+        md5: Option<String>,
+        status: Option<String>
+    }
+
+	impl FileInfo {
+		// Define your new function here
+		fn new(parent_dir: String, basename: String, thaiomic_id: Option<String>, customer_id: Option<String>, customer_idx: Option<String>, flowcell_id: Option<String>, flowcell_idx: Option<String>, lane_id: Option<String>, thaiomic_code: Option<String>, mate: i32, file_type: FileType, file_path: String, md5: Option<String>, status: Option<String>) -> Self {
+			FileInfo {
+				parent_dir,
+				basename,
+				thaiomic_id,
+				customer_id,
+				customer_idx,
+				flowcell_id,
+				flowcell_idx,
+				lane_id,
+                thaiomic_code,
+				mate,
+				file_type,
+				file_path,
+				md5,
+				status,
+			}
+		}
+
+		// Example of another function
+		// fn display_info(&self) {
+		// 	println!("File Type: {:?}", self.file_type);
+		// 	println!("File Path: {:?}", self.file_path);
+		// 	println!("MD5: {:?}", self.md5);
+		// 	println!("Status: {:?}", self.status);
+		// }
+	}
+
+
+    pub fn validate_create_file<P: AsRef<Path>>(watched_path: P, path: P) -> Result<FileInfo, FileError> {
+
+        /*
+         * Function take watched path and event.paths from notify::Event crate 
+         * Function return 
+         *      Ok() - FileInfo struct for GET/POST.
+         *      Err() - If one of validtion fail.
+         * Function check for 3 things:
+         *  - First is validating the path of directory, the path must 
+         *    be only at two level under watching directory.
+         *  - Second is validating the pattern of directory, the pattern must 
+         *    consist of all following section:
+         *  - Third is that the pattern must match with its parent directory.
+         *
+         *    Example:
+         *
+         *    T2302_81220513400257_RTC_56-E250004334_L01_56_1
+         *    |            |            |   |        |   |  |
+         *    ThaiOmicID   |            CustomerIDx  |   |  Mate
+         *                 CustomerID   |   |        |   FlowcellIDx
+         *                              FlowcellID LaneID
+         *                              |
+         *                              ThaiOmicCode
+         *
+         *
+         * TODO: ignore if file in more than 1 level under watched folder
+         */
+            let parent_dir = path.as_ref().parent().unwrap();
+            log::debug!("Check if file is created on watched directory...");
+            if format!("{}/",parent_dir.display().to_string()) ==  watched_path.as_ref().display().to_string() {
+                log::warn!("File {:?} is create on a watched folder {:?}, file is ignored...", path.as_ref().display().to_string(), parent_dir);
+                Err(FileError::ParentDirIsRoot(path.as_ref().display().to_string()))
+            } else {
+                // Determine parent dir 
+				log::debug!("Getting pattern of file's parent directory...");
+                match validate_pattern_dir(&parent_dir.to_string_lossy().to_string()) {
+                    Ok(dir_captures) => { 
+                        log::debug!("Succecfully validate file's parent directory pattern {:?}", dir_captures.get(0).map_or("", |m| m.as_str())); 
+                        log::info!("File's parent dir: {:?}", dir_captures.get(0).map_or("", |m| m.as_str())); 
+						let (dir_basename, [thaiomic_id, flowcell_id, year, month, day]) = dir_captures.extract();
+
+                        log::debug!("Getting file's pattern..");
+                        match validate_pattern_file(&path.as_ref().display().to_string()){
+                            Ok(file_captures) => {
+                                log::debug!("Succecfully validate file pattern {:?}", file_captures.get(0).map_or("", |m| m.as_str())); 
+                                log::info!("Verify file's basename: {:?}", file_captures.get(0).map_or("", |m| m.as_str())); 
+
+                                log::debug!("Checking file and its parent dir pattern...");
+                                if file_captures.name("thaiomic_id").map_or("", |m| m.as_str()) != dir_captures.name("thaiomic_id").map_or("", |m| m.as_str()) {
+									log::warn!("File and Dir Pattern not matched: thaiomic_id");
+                                    return Err(FileError::PatternConflict(path.as_ref().display().to_string()))
+                                }
+                                if file_captures.name("flowcell_id").map_or("", |m| m.as_str()) != dir_captures.name("flowcell_id").map_or("", |m| m.as_str()) {
+									log::warn!("File and Dir Pattern not matched: flowcell_id");
+                                    return Err(FileError::PatternConflict(path.as_ref().display().to_string()))
+                                }
+                                log::debug!("File and its dir pattern matched!");
+
+                                // TODO: get pattern out of file_captures
+								let (file_basename, [temp, thaiomic_id, customer_id, thaiomic_code, customer_idx, flowcell_id, lane_id, flowcell_idx]) = file_captures.extract();
+
+                                // TODO: match file and dir pattern 
+                                // log::info!("{:?} is created on watched directory", file_captures.get(0).map_or("", |m| m.as_str())); 
+                                log::debug!("Determine file extension...");
+                                if let Ok(ext) = get_extension(&path.as_ref().display().to_string()) {
+                                    // TODO: GET
+                                    // TODO: POST
+                                    // TODO: Get status
+                                    let filetype = ext.clone();
+                                    match ext {
+                                        FileType::MD5_1(mate) => {
+                                            log::debug!("[{}]: MD5 (type 1) of FQ_{} found!", &file_basename, &mate);
+                                            let md5_hash = read_md5_from_file(&path.as_ref().display().to_string()).unwrap();
+                                            let file_info = FileInfo::new(
+												dir_basename.to_string(),
+												file_basename.to_string(),
+												wrap_string(thaiomic_id),
+												wrap_string(customer_id),
+												wrap_string(customer_idx),
+												wrap_string(flowcell_id),
+												wrap_string(flowcell_idx),
+												wrap_string(lane_id),
+                                                wrap_string(thaiomic_code),
+												mate,
+												filetype, 
+												path.as_ref().display().to_string(), 
+												Some(md5_hash), 
+												None
+											);
+											log::debug!("{:?}", file_info);
+                                            Ok(file_info)
+                                        }
+                                        FileType::MD5_2(mate, md5_hash) => {
+                                            // TODO: handle md5 not found error
+                                            log::debug!("[{}]: MD5 (type 2) of FQ_{} found!", &file_basename, mate);
+                                            if let Some(hash) = md5_hash {
+                                                let file_info = FileInfo::new(
+                                                    dir_basename.to_string(),
+                                                    file_basename.to_string(),
+                                                    wrap_string(thaiomic_id),
+                                                    wrap_string(customer_id),
+                                                    wrap_string(customer_idx),
+                                                    wrap_string(flowcell_id),
+                                                    wrap_string(flowcell_idx),
+                                                    wrap_string(lane_id),
+                                                    wrap_string(thaiomic_code),
+                                                    mate,
+                                                    filetype, 
+                                                    path.as_ref().display().to_string(), 
+                                                    Some(hash.to_string()), 
+                                                    None
+                                                );
+												log::debug!("{:?}", file_info);
+                                                Ok(file_info)
+                                                
+                                            } else {
+                                                log::warn!("[{}]: {:?} md5 type2 not contain md5", &file_basename, &path.as_ref().display().to_string());
+                                                log::warn!("Try to read first line of the file..");
+                                                let md5_hash = read_md5_from_file(&path.as_ref().display().to_string()).unwrap();
+                                                let file_info = FileInfo::new(
+                                                    dir_basename.to_string(),
+                                                    file_basename.to_string(),
+                                                    wrap_string(thaiomic_id),
+                                                    wrap_string(customer_id),
+                                                    wrap_string(customer_idx),
+                                                    wrap_string(flowcell_id),
+                                                    wrap_string(flowcell_idx),
+                                                    wrap_string(lane_id),
+                                                    wrap_string(thaiomic_code),
+                                                    mate,
+                                                    filetype, 
+                                                    path.as_ref().display().to_string(), 
+                                                    Some(md5_hash), 
+                                                    None
+                                                );
+												log::debug!("{:?}", file_info);
+                                                Ok(file_info)
+                                            }
+                                        }
+                                        FileType::FQ(mate, status) => {
+                                            match status {
+                                                FileStatus::Pending => {
+                                                log::debug!("[{}]: Pending FQ_{} found!", &file_basename, &mate);
+                                                    let file_info = FileInfo::new(
+                                                        dir_basename.to_string(),
+                                                        file_basename.to_string(),
+                                                        wrap_string(thaiomic_id),
+                                                        wrap_string(customer_id),
+                                                        wrap_string(customer_idx),
+                                                        wrap_string(flowcell_id),
+                                                        wrap_string(flowcell_idx),
+                                                        wrap_string(lane_id),
+                                                        wrap_string(thaiomic_code),
+                                                        mate,
+                                                        filetype, 
+                                                        path.as_ref().display().to_string(), 
+                                                        None, 
+                                                        Some(String::from("Pending"))
+                                                    );
+													log::debug!("{:?}", file_info);
+                                                    Ok(file_info)
+                                                }
+                                                FileStatus::Finish => {
+                                                log::debug!("[{}]: Finish FQ_{} found!", &file_basename, &mate);
+                                                    let md5_hash = calculate_md5(&path.as_ref().display().to_string());
+                                                    let file_info = FileInfo::new(
+                                                        dir_basename.to_string(),
+                                                        file_basename.to_string(),
+                                                        wrap_string(thaiomic_id),
+                                                        wrap_string(customer_id),
+                                                        wrap_string(customer_idx),
+                                                        wrap_string(flowcell_id),
+                                                        wrap_string(flowcell_idx),
+                                                        wrap_string(lane_id),
+                                                        wrap_string(thaiomic_code),
+                                                        mate,
+                                                        filetype,
+                                                        path.as_ref().display().to_string(),
+                                                        Some(md5_hash.unwrap()),
+                                                        Some(String::from("Finish"))
+                                                    );
+													log::debug!("{:?}", file_info);
+                                                    Ok(file_info)
+                                                }
+                                            }
+                                        }
+										FileType::FQSTAT(mate) => {
+                                            log::debug!("[{}]: FQSTAT_{} found!", &file_basename, &mate);
+											let file_info = FileInfo::new(
+                                                dir_basename.to_string(),
+                                                file_basename.to_string(),
+                                                wrap_string(thaiomic_id),
+                                                wrap_string(customer_id),
+                                                wrap_string(customer_idx),
+                                                wrap_string(flowcell_id),
+                                                wrap_string(flowcell_idx),
+                                                wrap_string(lane_id),
+                                                wrap_string(thaiomic_code),
+                                                mate,
+                                                filetype,
+                                                path.as_ref().display().to_string(),
+                                                None,
+                                                None
+                                            );
+											log::debug!("{:?}", file_info);
+                                            Ok(file_info)
+										}
+										FileType::Report => { 
+                                            log::debug!("[{}]: REPORT found!", &file_basename);
+											let file_info = FileInfo::new(
+                                                dir_basename.to_string(),
+                                                file_basename.to_string(),
+                                                wrap_string(thaiomic_id),
+                                                wrap_string(customer_id),
+                                                wrap_string(customer_idx),
+                                                wrap_string(flowcell_id),
+                                                wrap_string(flowcell_idx),
+                                                wrap_string(lane_id),
+                                                wrap_string(thaiomic_code),
+                                                0,
+                                                filetype,
+                                                path.as_ref().display().to_string(),
+                                                None,
+                                                None
+                                            );
+											log::debug!("{:?}", file_info);
+                                            Ok(file_info)
+										}
+										
+                                    }
+                                } else {
+                                    Err(FileError::PatternConflict(path.as_ref().display().to_string()))
+
+                                }
+                            }
+                            Err(file_vec_err) => {
+                                // TODO: handle each err in vector
+                                log::warn!("validate_file_pattern_error {:?}", &path.as_ref().display().to_string());
+								for err in file_vec_err.into_iter() {
+									log::warn!("{:?}",err);
+								}
+                                Err(FileError::FilePatternError(PatternError::Others(path.as_ref().display().to_string())))
+
+                            }
+                        
+                        }
+                    },
+                    Err(dir_vec_err) => {
+                        // TODO: handle each err in vector
+                        log::warn!("validate_dir_pattern_error {:?}", &path.as_ref().display().to_string());
+						for err in dir_vec_err.into_iter() {
+							log::warn!("{:?}",err);
+						}
+                        Err(FileError::FilePatternError(PatternError::Others(path.as_ref().display().to_string())))
+                    }
+                }
+
+            }
+                
+    }
+
+    fn get_extension(path: &str) -> Result<FileType,FileError>{
+            // set of regex to cactch all extension
+            //              fastq_1             - 1.fq.gz
+            //              incomplete fastq_1  - 1.fq.gz.x23f21
+            //              fastq_2             - 2.fq.gz
+            //              incomplete fastq_2  - 2.fq.gz.gqe21w
+            //              md5_1 type-1        - 1.fq.gz.md5.txt
+            //              md5_1 type-2        - 1.fq.gz.d875fa91b8273ee74667dccd3c4db520.md5.txt
+            //              md5_2 type-1        - 2.fq.gz.md5.txt
+            //              md5_2 type-2        - 2.fq.gz.a624167802093729255092719181a679.md5.txt
+            //              fqstat_1            - 1.fq.fqStat.txt
+            //              fqstat_2            - 2.fq.fqStat.txt
+            //              report              - report.html
+
+            let set = [r"(?<mate>[12])(?<ext>\.fq\.gz)(?<hash>.?\w{0,6})$",
+                 r"(?<mate>[12])(?<ext>\.fq\.gz\.md5\.txt)$",
+                 r"(?<mate>[12])(?<ext>\.fq\.gz).(?<md5>\w{0,32})(?<ext2>\.md5\.txt)$",
+                 r"(?<mate>[12])(?<ext>\.fq\.fqStat\.txt)$",
+                 r"(?<ext>\.report\.html)$"];
+            let re_set = RegexSet::new(&set).unwrap();
+
+            if re_set.is_match(path) {
+                // 0 = FQ
+                // 1 = md5-1
+                // 2 = md5-2
+                // 3 = fqstat
+                // 4 = report
+               let ext_matches: Vec<_> = re_set.matches(&path).into_iter().collect();
+               if ext_matches.len() > 1 {
+                   log::warn!("{:?}: match more than one pattern", &path);
+                   log::debug!("{:?}", ext_matches);
+                   Err(FileError::UnknownExtension(String::from("More than one patterns")))
+               } else {
+                   match ext_matches[0] {
+                       0 => {
+                            let re_fq = Regex::new(set[0]).unwrap();
+                            let matches_fq = re_fq.captures(&path).unwrap();
+                            let mate = matches_fq.name("mate").map_or("", |m| m.as_str());
+                            if let Some(hash) = matches_fq.name("hash").map( |m| m.as_str() ) {
+                                if hash == "" {
+                                    // log::debug!("{:?} - hash : {}", &path.to_string(), hash);
+                                    let file_status = FileStatus::Finish;
+
+                                    return Ok(FileType::FQ(mate.parse().unwrap(), file_status))
+                                } else {
+                                    // log::debug!("{:?} - hash : {}", &path.to_string(), hash);
+                                    let file_status = FileStatus::Pending;
+                                    return Ok(FileType::FQ(mate.parse().unwrap(), file_status))
+                                }
+                            } else {
+                                Err(FileError::UnknownExtension(String::from("hash group do no match")))
+                            }
+                       },
+                       1 => {
+                           let re_md5_1 = Regex::new(set[1]).unwrap();
+                           let matches_md5_1 = re_md5_1.captures(&path).unwrap();
+                           let mate = matches_md5_1.name("mate").map_or("", |m| m.as_str());
+                           Ok(FileType::MD5_1(mate.parse().unwrap()))
+                       },
+                       2 => {
+                           let re_md5_2 = Regex::new(set[2]).unwrap();
+                           let matches_md5_2 = re_md5_2.captures(&path).unwrap();
+                           let mate = matches_md5_2.name("mate").map_or("", |m| m.as_str());
+                           let md5 = matches_md5_2.name("md5").map_or("", |m| m.as_str());
+                           Ok(FileType::MD5_2(mate.parse().unwrap(), Some(md5.to_string())))
+                       },
+                       3 => {
+                           let re_fqstat = Regex::new(set[3]).unwrap();
+						   // log::debug!("{:?}",&path.to_string());
+                           let matches_fqstat = re_fqstat.captures(&path).unwrap();
+                           let mate = matches_fqstat.name("mate").map_or("", |m| m.as_str());
+                           Ok(FileType::FQSTAT(mate.parse().unwrap()))
+                       },
+                       4 => {
+                           let re_report = Regex::new(set[4]).unwrap();
+                           let matches_fqstat = re_report.captures(&path).unwrap();
+                           Ok(FileType::Report)
+                       }
+                       _ => {
+                           Err(FileError::UnknownExtension(path.to_string()))
+                       }
+                   }
+               } 
+               
+            } else {
+                log::warn!("{:?}: Unknown extension", &path);
+                Err(FileError::UnknownExtension(path.to_string()))
+            }
+    }
+
+    fn validate_pattern_dir(path: &str) -> Result<regex::Captures,Vec<PatternError>>{
+        /*
+         * Function take string of path and Regex pattern
+         * Function return either regex::Capture result or vector of err
+         */
+        let dir_pattern = Regex::new(r"(?<thaiomic_id>[DT][0-9]+)_(?<flowcell_id>E[0-9]+[A-Z]*)_(?<year>20[0-9][0-9])(?<month>[01][0-9])(?<day>[0123][0-9])").unwrap();
+        let mut errors = Vec::new();
+
+        log::debug!("Start validating directory pattern of {}", &path);
+
+        if let Some(matched) = dir_pattern.captures(path) {
+
+            if let None = matched.name("thaiomic_id") {
+                errors.push(PatternError::IdError(path.to_string()));
+            }
+            if let None = matched.name("flowcell_id") {
+                errors.push(PatternError::FlowcellIdError(path.to_string()));
+            }
+            if let None = matched.name("year") {
+                errors.push(PatternError::DateYearError(path.to_string()));
+            }
+            if let None = matched.name("month") {
+                errors.push(PatternError::DateMonthError(path.to_string()));
+            }
+            if let None = matched.name("day") {
+                errors.push(PatternError::DateDayError(path.to_string()));
+            }
+            
+        } else {
+            errors.push(PatternError::Others(path.to_string()));
+        }
+
+        if !errors.is_empty() {
+            Err(errors)
+        } else {
+			Ok(dir_pattern.captures(path).unwrap())
+
+        }
+
+    }
+
+    fn validate_pattern_file(path: &str) -> Result<regex::Captures,Vec<PatternError>>{
+        /*
+         * Function take string of path and Regex pattern
+         * Function return either regex::Capture result or vector of err
+         */
+        let file_pattern = Regex::new(r"(?<tmp>\.?)(?<thaiomic_id>[DT][0-9]+)_(?<customer_id>[0-9]+)_?(?<thaiomic_code>[A-Z]*)_?_(?<customer_idx>[0-9]{2})-(?<flowcell_id>E[0-9]+[A-Z]*)_(?<lane_id>L[0-9]{2})_(?<flowcell_idx>[0-9]+)").unwrap();
+
+        let mut errors = Vec::new();
+        if let Some(matched) = file_pattern.captures(path) {
+
+            if let None = matched.name("thaiomic_id"){
+                errors.push(PatternError::IdError(path.to_string()));
+            }
+            if let None = matched.name("customer_id") {
+                errors.push(PatternError::CustomerIdError(path.to_string()));
+            }
+            if let None = matched.name("customer_idx") {
+                errors.push(PatternError::CustomerIdxError(path.to_string()));
+            }
+            if let None = matched.name("flowcell_id") {
+                errors.push(PatternError::FlowcellIdError(path.to_string()));
+            }
+            if let None = matched.name("lane_id") {
+                errors.push(PatternError::LaneIdError(path.to_string()));
+            }
+            if let None = matched.name("flowcell_idx") {
+                errors.push(PatternError::FlowcellIdxError(path.to_string()));
+            }
+        } else {
+            errors.push(PatternError::Others(path.to_string()));
+        }
+
+        if !errors.is_empty() {
+            Err(errors)
+        } else {
+			Ok(file_pattern.captures(path).unwrap())
+        }
+    }
+
+	fn read_md5_from_file(md5_file_path: &str) -> io::Result<String> {
+        log::debug!("Reading first line of {}", md5_file_path);
+		let mut md5_hash = String::new();
+		let file = File::open(md5_file_path)?;
+		let mut reader = io::BufReader::new(file);
+
+		// Read the MD5 hash from the file
+		reader.read_line(&mut md5_hash)?;
+
+		// Trim any leading or trailing whitespace
+		md5_hash = md5_hash.trim().to_string();
+
+		Ok(md5_hash)
+	}
+
+    fn calculate_md5(file_path: &str) -> io::Result<String> {
+        log::debug!("Start MD5CheckSum on {}: ", file_path);
+		// let mut file = File::open(file_path)?;
+		let mut file = File::open(file_path)?;
+		let mut buffer = Vec::new();
+
+		// Read the entire file into a buffer
+		file.read_to_end(&mut buffer)?;
+
+		// Calculate the MD5 hash of the file content
+		let mut md5 = Md5::new();
+		md5.update(&buffer);
+		let result = md5.finalize();
+
+		// Convert the MD5 hash to a hexadecimal string
+        let hex_string = hex::encode(result);
+        log::debug!("Finish MD5CheckSum on {}: {}", file_path, hex_string);
+
+		Ok(hex_string)
+	 } 
+    
+    fn wrap_string(txt: &str) -> Option<String> {
+        if txt.is_empty() {
+            None
+        } else {
+            Some(txt.to_string())
+        }
+        
+    }
+    
+
+}
