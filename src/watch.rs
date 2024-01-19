@@ -1,171 +1,6 @@
-pub mod watch {
-	use notify::{poll::ScanEvent, Config, PollWatcher, RecursiveMode, Watcher, event};
-	use std::path::Path;
-	use std::time::Duration;
-	use std::{fs, io};
-    use std::error::Error;
-    use log::{info, warn, error};
-    use std::path::PathBuf ;
-    use std::collections::HashMap;
-    use notify::event::EventKind;
-    use regex::{Regex, RegexSet};
-    use std::os::unix::fs::MetadataExt;
-    use md5::{Md5, Digest};
-    use hex_literal::hex;
+pub mod utils_checkfile {
 
-	pub fn watch<P: AsRef<Path>>(path: P) -> notify::Result<()> {
-		let config = Config::default()
-			.with_poll_interval(Duration::from_secs(10));
-		// .with_compare_contents(true);
-		let (tx, rx) = std::sync::mpsc::channel();
-
-		// if you want to use the same channel for both events
-		// and you need to differentiate between scan and file change events,
-		// then you will have to use something like this
-		enum Message {
-			Event(notify::Result<notify::Event>),
-			Scan(ScanEvent),
-		}
-
-		let tx_c = tx.clone();
-		// use the pollwatcher and set a callback for the scanning events
-		let mut watcher = PollWatcher::with_initial_scan(
-			move |watch_event| {
-				tx_c.send(Message::Event(watch_event)).unwrap();
-			},
-			// Config::default().with_poll_interval(Duration::from_secs(2)),
-			config,
-			move |scan_event| {
-				tx.send(Message::Scan(scan_event)).unwrap();
-			},
-		)?;
-
-		// Add a path to be watched. All files and directories at that path and
-		// below will be monitored for changes.
-		watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
-		for res in &rx {
-			match res {
-				Message::Event(e) => {
-                    match e {
-                        Ok(event) => {
-                            match event.kind {
-                                EventKind::Create(kind) => {
-                                    handle_create_event(&path.as_ref(), event);
-                                    // match handle_create_event(&path.as_ref(), event) {
-                                    //     PathType::Dir(result) => {
-                                    //         if let Err(e) = result {
-                                    //             log::warn!("{:?}",e);
-                                    //         } else {
-                                    //             ()
-                                    //         }
-                                    //     }
-                                    //     PathType::File(x) => {
-                                    //        // TODO: handle struct then upload  
-                                    //        // TODO: handle mongo status
-
-                                    //     }
-                                    // }
-
-                                }
-                                _ => {
-                                    PathType::None;
-                                }
-                                // EventKind::Modify(ModifyKind) => {
-                                //     // If path is dir
-                                //     // Check complete/incomplete tag
-                                //     //     Warn if incomplete!
-                                //     // else if file
-                                //     // check if it is incomplete fastq file 
-                                //     // if not warn!
-                                // }
-                                // EventKind::Remove(RemoveKind) => {},
-                                //     // If path is dir
-                                //     // Warn!
-                                //     // else if file 
-                                //     // check if it is incomplete fastq file
-                                //     // if not warn!
-                                // EventKind::Access(AccessKind) => {}
-                                // EventKind::Any => {}
-                                // EventKind::Other => {}
-                                // // let data = check_event(&path, event).unwrap();
-                            // // data update
-                            // // mongohandiling(package, event)
-                            }
-                        }
-                         Err(error) => {
-                                log::error!("Error: {error:?}");
-                        }
-                    }
-				}
-				Message::Scan(e) => {
-                    println!("Scan event {e:?}");
-                },
-                // data checkfile
-                // mongohandling(package, scan)
-			}
-		}
-
-		Ok(())
-	}
-    
-    use super::utils_checkfile::{validate_create_dir, validate_create_file, FileInfo, FileError, DirError};
-    use std::fmt::Display;
-    
-    #[derive(Debug)]
-    pub enum PathType {
-        Dir(Result<(),DirError>),
-        File(Result<FileInfo,FileError>),
-        None
-    }
-
-    fn handle_create_event(watched_path: &Path, mut event: notify::Event) -> PathType {
-        let path = event.paths.pop().unwrap();
-        if path.is_dir() {
-            log::debug!("Directory of: {:?} is created", &path);
-            PathType::Dir(validate_create_dir(&watched_path, &path.as_path()))
-        } else {
-            log::debug!("File of: {:?} is created", &path);
-            PathType::File(validate_create_file(&watched_path, &path.as_ref()))
-        }
-    }
-
-    // fn handle_modify_event<P: AsRef<Path>>(watched_path: P, mut event: notify::Event) {
-    //     let path = event.paths.pop().unwrap();
-    //     if path.is_dir() {
-    //         // check dir not mark as finish
-    //         // ignore if not
-    //         validate_modify_dir(watched_path, path);
-    //     } else {
-    //         // check parent dir not mark as finish
-    //         // check for only fastq 
-    //         // warn if not 
-    //         validate_modify_file(watched_path, &path);
-    //     }
-    // }
-
-    // fn handle_remove_event<P: AsRef<Path>>(watched_path: P, mut event: notify::Event) {
-    //     let path = event.paths.pop().unwrap();
-    //     if path.is_dir() {
-    //         // check dir not mark as finish
-    //         // ignore if not
-    //         validate_remove_dir(watched_path, path);
-    //     } else {
-    //         // check parent dir not mark as finish
-    //         // check for only fastq 
-    //         // warn if not 
-    //         validate_remove_file(watched_path, &path);
-    //     }
-    // }
-
-   
-}
-
-
-
-
-mod utils_checkfile {
-
-    use std::fs::File;
+    use std::fs::{File, self};
     use std::io::{self, Read, BufRead};
 	use std::path::{Path, PathBuf};
     use regex::Captures;
@@ -174,6 +9,7 @@ mod utils_checkfile {
 	use hex::ToHex;
     use std::sync::mpsc::channel;
     use std::thread;
+    use human_bytes::human_bytes;
 
     #[derive(Clone,Debug)]
     pub enum FileType {
@@ -197,6 +33,8 @@ mod utils_checkfile {
         UnknownExtension(String),
         FilePatternError(PatternError),
         PatternConflict(String),
+        ModifyFinishFile(String),
+        RemoveFinishFile(String)
             // ROOT 
             // INCORRECT DIR
     }
@@ -219,16 +57,63 @@ mod utils_checkfile {
     pub enum DirError {
         NonRootDirError(String),
         DirPatternError(PatternError),
+        ModifyFinishDir(String),
+        RemoveDir(String),
     }
 
+    #[derive(Debug)]
+    pub enum PathType {
+        Dir(Result<(),DirError>),
+        File(Result<FileInfo,FileError>),
+        None
+    }
 
-    pub fn validate_create_dir<P: AsRef<Path>>(watched_path: P, path: P) -> Result<(),DirError> {
+    pub fn handle_create_event(watched_path: &Path, mut event: notify::Event) -> PathType {
+        let path = event.paths.pop().unwrap();
+        if path.is_dir() {
+            log::debug!("Directory of: {:?} is created", &path);
+            PathType::Dir(validate_create_dir(&watched_path, &path.as_path()))
+        } else {
+            log::debug!("File of: {:?} is created", &path);
+            PathType::File(validate_create_file(&watched_path, &path.as_ref()))
+        }
+    }
+
+    pub fn handle_modify_event(watched_path: &Path, mut event: notify::Event) -> PathType {
+        let path = event.paths.pop().unwrap();
+        if path.is_dir() {
+            // TODO: Warn if dir path should not be modify(Finish).
+            // TODO: Fetch db to confirm
+            PathType::Dir(Err(DirError::ModifyFinishDir(path.display().to_string())))
+        } else {
+            PathType::File(validate_modify_file(watched_path, &path.as_ref()))
+        }
+    }
+
+    pub fn handle_remove_event(watched_path: &Path, mut event: notify::Event) -> PathType {
+        let path = event.paths.pop().unwrap();
+        if path.is_dir() {
+            // check dir not mark as finish
+            // ignore if not
+            PathType::Dir(Err(DirError::RemoveDir(path.display().to_string())))
+        } else {
+            // check parent dir not mark as finish
+            // check for only fastq 
+            // warn if not 
+            if let Err(e) = validate_remove_file(watched_path, &path.as_ref()) {
+                PathType::File(Err(e))
+            } else {
+                PathType::None
+            }
+        }
+    }
+    fn validate_create_dir<P: AsRef<Path>>(watched_path: P, path: P) -> Result<(),DirError> {
         /* 
          * Function take watched path and event.paths from notify::Event crate 
          * Function return 
          *      Ok - Dir struct for GET/POST
          *      Err - if any validation steps fail.
-         * Function check for 2 things:
+         * Function validate 2 things:
          *  - First is validating the path of directory, the path must not
          *    be anywhere except at the watched directory
          *  - Second is validating the pattern of directory, the pattern must 
@@ -286,13 +171,30 @@ mod utils_checkfile {
 		mate: i32,
         file_type: FileType,
         file_path: String,
+        file_size: u64,
         md5: Option<String>,
         status: Option<String>
     }
 
 	impl FileInfo {
 		// Define your new function here
-		fn new(parent_dir: String, basename: String, thaiomic_id: Option<String>, customer_id: Option<String>, customer_idx: Option<String>, flowcell_id: Option<String>, flowcell_idx: Option<String>, lane_id: Option<String>, thaiomic_code: Option<String>, mate: i32, file_type: FileType, file_path: String, md5: Option<String>, status: Option<String>) -> Self {
+		fn new(
+            parent_dir: String, 
+            basename: String, 
+            thaiomic_id: Option<String>, 
+            customer_id: Option<String>, 
+            customer_idx: Option<String>, 
+            flowcell_id: Option<String>, 
+            flowcell_idx: Option<String>, 
+            lane_id: Option<String>, 
+            thaiomic_code: Option<String>, 
+            mate: i32, 
+            file_type: FileType, 
+            file_path: String,
+            file_size: u64,
+            md5: Option<String>, 
+            status: Option<String>
+        ) -> Self {
 			FileInfo {
 				parent_dir,
 				basename,
@@ -306,12 +208,13 @@ mod utils_checkfile {
 				mate,
 				file_type,
 				file_path,
+                file_size,
 				md5,
 				status,
 			}
 		}
 
-		// Example of another function
+		// Pretty print struct
 		// fn display_info(&self) {
 		// 	println!("File Type: {:?}", self.file_type);
 		// 	println!("File Path: {:?}", self.file_path);
@@ -320,6 +223,113 @@ mod utils_checkfile {
 		// }
 	}
 
+    pub fn validate_modify_file<P: AsRef<Path>>(watched_path: P, path: P) -> Result<FileInfo, FileError> {
+        let parent_dir = path.as_ref().parent().unwrap();
+            log::debug!("Check if file is created on watched directory...");
+            if format!("{}/",parent_dir.display().to_string()) ==  watched_path.as_ref().display().to_string() {
+                log::warn!("File {:?} is create on a watched folder {:?}, file is ignored...", path.as_ref().display().to_string(), parent_dir);
+                Err(FileError::ParentDirIsRoot(path.as_ref().display().to_string()))
+            } else {
+                // Determine parent dir 
+				log::debug!("Getting pattern of file's parent directory...");
+                match validate_pattern_dir(&parent_dir.to_string_lossy().to_string()) {
+                    Ok(dir_captures) => { 
+                        log::debug!("Succecfully validate file's parent directory pattern {:?}", dir_captures.get(0).map_or("", |m| m.as_str())); 
+                        log::info!("File's parent dir: {:?}", dir_captures.get(0).map_or("", |m| m.as_str())); 
+						let (dir_basename, [thaiomic_id, flowcell_id, year, month, day]) = dir_captures.extract();
+
+                        log::debug!("Getting file's pattern..");
+                        match validate_pattern_file(&path.as_ref().display().to_string()){
+                            Ok(file_captures) => {
+                                log::debug!("Succecfully validate file pattern {:?}", file_captures.get(0).map_or("", |m| m.as_str())); 
+                                log::info!("Verify file's basename: {:?}", file_captures.get(0).map_or("", |m| m.as_str())); 
+
+                                log::debug!("Checking file and its parent dir pattern...");
+                                if file_captures.name("thaiomic_id").map_or("", |m| m.as_str()) != dir_captures.name("thaiomic_id").map_or("", |m| m.as_str()) {
+									log::warn!("File and Dir Pattern not matched: thaiomic_id");
+                                    return Err(FileError::PatternConflict(path.as_ref().display().to_string()))
+                                }
+                                if file_captures.name("flowcell_id").map_or("", |m| m.as_str()) != dir_captures.name("flowcell_id").map_or("", |m| m.as_str()) {
+									log::warn!("File and Dir Pattern not matched: flowcell_id");
+                                    return Err(FileError::PatternConflict(path.as_ref().display().to_string()))
+                                }
+                                log::debug!("File and its dir pattern matched!");
+
+								let (file_basename, [temp, thaiomic_id, custom_name, customer_id, thaiomic_code, customer_idx, flowcell_id, lane_id, flowcell_idx]) = file_captures.extract();
+
+                                // TODO: match file and dir pattern 
+                                // log::info!("{:?} is created on watched directory", file_captures.get(0).map_or("", |m| m.as_str())); 
+                                log::debug!("Determine file extension...");
+                                if let Ok(ext) = get_extension(&path.as_ref().display().to_string()) {
+                                    // TODO: GET
+                                    // TODO: POST
+                                    // TODO: Get status
+                                    let filetype = ext.clone();
+                                    match ext {
+                                        FileType::FQ(mate, status) => {
+                                            match status {
+                                                FileStatus::Pending => {
+                                                log::debug!("[{}]: Pending FQ_{} found!", &file_basename, &mate);
+                                                log::debug!("[{}] - Starting temporary FQSTAT_{} File size: {:?}", &file_basename, &mate, human_bytes(fs::metadata(&path).unwrap().len() as f64));
+                                                    let file_info = FileInfo::new(
+                                                        dir_basename.to_string(),
+                                                        String::from(&file_basename[1..].to_string()), // basename expected to be hidden - ".D2301_L01_56"
+                                                        wrap_string(thaiomic_id),
+                                                        wrap_string(customer_id),
+                                                        wrap_string(customer_idx),
+                                                        wrap_string(flowcell_id),
+                                                        wrap_string(flowcell_idx),
+                                                        wrap_string(lane_id),
+                                                        wrap_string(thaiomic_code),
+                                                        mate,
+                                                        filetype, 
+                                                        path.as_ref().display().to_string(), 
+                                                        fs::metadata(&path).unwrap().len(),
+                                                        None, 
+                                                        Some(String::from("Pending"))
+                                                    );
+													log::debug!("{:?}", file_info);
+                                                    Ok(file_info)
+                                                }
+                                                FileStatus::Finish => {
+                                                log::warn!("[{}]: Written on finish FQ_{} file!", &file_basename, &mate);
+                                                Err(FileError::ModifyFinishFile(path.as_ref().display().to_string()))
+                                                }
+                                            }
+                                        }
+                                        _ => {
+                                            Err(FileError::ModifyFinishFile(path.as_ref().display().to_string()))
+                                        }
+                                    }                                    
+                                } else {
+                                    Err(FileError::PatternConflict(path.as_ref().display().to_string()))
+                                }
+                            }
+                            Err(file_vec_err) => {
+                                // TODO: handle each err in vector
+                                log::warn!("validate_file_pattern_error {:?}", &path.as_ref().display().to_string());
+								for err in file_vec_err.into_iter() {
+									log::warn!("{:?}",err);
+								}
+                                Err(FileError::FilePatternError(PatternError::Others(path.as_ref().display().to_string())))
+
+                            }
+                        
+                        }
+                    },
+                    Err(dir_vec_err) => {
+                        // TODO: handle each err in vector
+                        log::warn!("validate_dir_pattern_error {:?}", &path.as_ref().display().to_string());
+						for err in dir_vec_err.into_iter() {
+							log::warn!("{:?}",err);
+						}
+                        Err(FileError::FilePatternError(PatternError::Others(path.as_ref().display().to_string())))
+                    }
+                }
+
+            }
+                
+    }
 
     pub fn validate_create_file<P: AsRef<Path>>(watched_path: P, path: P) -> Result<FileInfo, FileError> {
 
@@ -337,17 +347,18 @@ mod utils_checkfile {
          *
          *    Example:
          *
-         *    T2302_81220513400257_RTC_56-E250004334_L01_56_1
-         *    |            |            |   |        |   |  |
+         *    T2302_NAME_81220513400257_RTC_56-E250004334_L01_56_1
+         *    |     |      |            |   |        |   |  |
          *    ThaiOmicID   |            CustomerIDx  |   |  Mate
-         *                 CustomerID   |   |        |   FlowcellIDx
-         *                              FlowcellID LaneID
+         *          |      CustomerID   |   |        |   FlowcellIDx
+         *          CustomName        FlowcellID   LaneID
          *                              |
          *                              ThaiOmicCode
          *
          *
-         * TODO: ignore if file in more than 1 level under watched folder
+         * 
          */
+        // TODO: ignore if file in more than 1 level under watched folder
             let parent_dir = path.as_ref().parent().unwrap();
             log::debug!("Check if file is created on watched directory...");
             if format!("{}/",parent_dir.display().to_string()) ==  watched_path.as_ref().display().to_string() {
@@ -379,8 +390,7 @@ mod utils_checkfile {
                                 }
                                 log::debug!("File and its dir pattern matched!");
 
-                                // TODO: get pattern out of file_captures
-								let (file_basename, [temp, thaiomic_id, customer_id, thaiomic_code, customer_idx, flowcell_id, lane_id, flowcell_idx]) = file_captures.extract();
+								let (file_basename, [temp, thaiomic_id, custom_name, customer_id, thaiomic_code, customer_idx, flowcell_id, lane_id, flowcell_idx]) = file_captures.extract();
 
                                 // TODO: match file and dir pattern 
                                 // log::info!("{:?} is created on watched directory", file_captures.get(0).map_or("", |m| m.as_str())); 
@@ -393,6 +403,7 @@ mod utils_checkfile {
                                     match ext {
                                         FileType::MD5_1(mate) => {
                                             log::debug!("[{}]: MD5 (type 1) of FQ_{} found!", &file_basename, &mate);
+                                            log::debug!("[{}] - MD5 (type 1) of FQ_{} File size: {:?}", &file_basename, &mate, human_bytes(fs::metadata(&path).unwrap().len() as f64));
                                             let md5_hash = read_md5_from_file(&path.as_ref().display().to_string()).unwrap();
                                             let file_info = FileInfo::new(
 												dir_basename.to_string(),
@@ -407,6 +418,7 @@ mod utils_checkfile {
 												mate,
 												filetype, 
 												path.as_ref().display().to_string(), 
+                                                fs::metadata(&path).unwrap().len(),
 												Some(md5_hash), 
 												None
 											);
@@ -416,6 +428,7 @@ mod utils_checkfile {
                                         FileType::MD5_2(mate, md5_hash) => {
                                             // TODO: handle md5 not found error
                                             log::debug!("[{}]: MD5 (type 2) of FQ_{} found!", &file_basename, mate);
+                                            log::debug!("[{}] - MD5 (type 2) of FQ_{} File size: {:?}", &file_basename, &mate, human_bytes(fs::metadata(&path).unwrap().len() as f64));
                                             if let Some(hash) = md5_hash {
                                                 let file_info = FileInfo::new(
                                                     dir_basename.to_string(),
@@ -430,6 +443,7 @@ mod utils_checkfile {
                                                     mate,
                                                     filetype, 
                                                     path.as_ref().display().to_string(), 
+                                                    fs::metadata(&path).unwrap().len(),
                                                     Some(hash.to_string()), 
                                                     None
                                                 );
@@ -453,6 +467,7 @@ mod utils_checkfile {
                                                     mate,
                                                     filetype, 
                                                     path.as_ref().display().to_string(), 
+                                                    fs::metadata(&path).unwrap().len(),
                                                     Some(md5_hash), 
                                                     None
                                                 );
@@ -464,9 +479,10 @@ mod utils_checkfile {
                                             match status {
                                                 FileStatus::Pending => {
                                                 log::debug!("[{}]: Pending FQ_{} found!", &file_basename, &mate);
+                                                log::debug!("[{}] - Starting temporary FQSTAT_{} File size: {:?}", &file_basename, &mate, human_bytes(fs::metadata(&path).unwrap().len() as f64));
                                                     let file_info = FileInfo::new(
                                                         dir_basename.to_string(),
-                                                        file_basename.to_string(),
+                                                        String::from(&file_basename[1..].to_string()), // basename expected to be hidden - ".D2301_L01_56"
                                                         wrap_string(thaiomic_id),
                                                         wrap_string(customer_id),
                                                         wrap_string(customer_idx),
@@ -477,6 +493,7 @@ mod utils_checkfile {
                                                         mate,
                                                         filetype, 
                                                         path.as_ref().display().to_string(), 
+                                                        fs::metadata(&path).unwrap().len(),
                                                         None, 
                                                         Some(String::from("Pending"))
                                                     );
@@ -485,6 +502,7 @@ mod utils_checkfile {
                                                 }
                                                 FileStatus::Finish => {
                                                 log::debug!("[{}]: Finish FQ_{} found!", &file_basename, &mate);
+                                                log::debug!("[{}] - Finish FQ_{} File size: {:?}", &file_basename, &mate, human_bytes(fs::metadata(&path).unwrap().len() as f64));
                                                     let md5_hash = calculate_md5(&path.as_ref().display().to_string());
                                                     let file_info = FileInfo::new(
                                                         dir_basename.to_string(),
@@ -499,6 +517,7 @@ mod utils_checkfile {
                                                         mate,
                                                         filetype,
                                                         path.as_ref().display().to_string(),
+                                                        fs::metadata(&path).unwrap().len(),
                                                         Some(md5_hash.unwrap()),
                                                         Some(String::from("Finish"))
                                                     );
@@ -509,6 +528,7 @@ mod utils_checkfile {
                                         }
 										FileType::FQSTAT(mate) => {
                                             log::debug!("[{}]: FQSTAT_{} found!", &file_basename, &mate);
+                                            log::debug!("[{}] - FQSTAT_{} File size: {:?}", &file_basename, &mate, human_bytes(fs::metadata(&path).unwrap().len() as f64));
 											let file_info = FileInfo::new(
                                                 dir_basename.to_string(),
                                                 file_basename.to_string(),
@@ -522,6 +542,7 @@ mod utils_checkfile {
                                                 mate,
                                                 filetype,
                                                 path.as_ref().display().to_string(),
+                                                fs::metadata(&path).unwrap().len(),
                                                 None,
                                                 None
                                             );
@@ -543,6 +564,7 @@ mod utils_checkfile {
                                                 0,
                                                 filetype,
                                                 path.as_ref().display().to_string(),
+                                                fs::metadata(&path).unwrap().len(),
                                                 None,
                                                 None
                                             );
@@ -581,7 +603,95 @@ mod utils_checkfile {
             }
                 
     }
+    pub fn validate_remove_file<P: AsRef<Path>>(watched_path: P, path: P) -> Result<(),FileError> {
+        let parent_dir = path.as_ref().parent().unwrap();
+            log::debug!("Check if file is created on watched directory...");
+            if format!("{}/",parent_dir.display().to_string()) ==  watched_path.as_ref().display().to_string() {
+                log::warn!("File {:?} is create on a watched folder {:?}, file is ignored...", path.as_ref().display().to_string(), parent_dir);
+                Err(FileError::ParentDirIsRoot(path.as_ref().display().to_string()))
+            } else {
+                // Determine parent dir 
+				log::debug!("Getting pattern of file's parent directory...");
+                match validate_pattern_dir(&parent_dir.to_string_lossy().to_string()) {
+                    Ok(dir_captures) => { 
+                        log::debug!("Succecfully validate file's parent directory pattern {:?}", dir_captures.get(0).map_or("", |m| m.as_str())); 
+                        log::info!("File's parent dir: {:?}", dir_captures.get(0).map_or("", |m| m.as_str())); 
+						let (dir_basename, [thaiomic_id, flowcell_id, year, month, day]) = dir_captures.extract();
 
+                        log::debug!("Getting file's pattern..");
+                        match validate_pattern_file(&path.as_ref().display().to_string()){
+                            Ok(file_captures) => {
+                                log::debug!("Succecfully validate file pattern {:?}", file_captures.get(0).map_or("", |m| m.as_str())); 
+                                log::info!("Verify file's basename: {:?}", file_captures.get(0).map_or("", |m| m.as_str())); 
+
+                                log::debug!("Checking file and its parent dir pattern...");
+                                if file_captures.name("thaiomic_id").map_or("", |m| m.as_str()) != dir_captures.name("thaiomic_id").map_or("", |m| m.as_str()) {
+									log::warn!("File and Dir Pattern not matched: thaiomic_id");
+                                    return Err(FileError::PatternConflict(path.as_ref().display().to_string()))
+                                }
+                                if file_captures.name("flowcell_id").map_or("", |m| m.as_str()) != dir_captures.name("flowcell_id").map_or("", |m| m.as_str()) {
+									log::warn!("File and Dir Pattern not matched: flowcell_id");
+                                    return Err(FileError::PatternConflict(path.as_ref().display().to_string()))
+                                }
+                                log::debug!("File and its dir pattern matched!");
+
+								let (file_basename, [temp, thaiomic_id, custom_name, customer_id, thaiomic_code, customer_idx, flowcell_id, lane_id, flowcell_idx]) = file_captures.extract();
+
+                                // TODO: match file and dir pattern 
+                                // log::info!("{:?} is created on watched directory", file_captures.get(0).map_or("", |m| m.as_str())); 
+                                log::debug!("Determine file extension...");
+                                if let Ok(ext) = get_extension(&path.as_ref().display().to_string()) {
+                                    // TODO: GET
+                                    // TODO: POST
+                                    // TODO: Get status
+                                    let filetype = ext.clone();
+                                    match ext {
+                                        FileType::FQ(mate, status) => {
+                                            match status {
+                                                FileStatus::Pending => {
+                                                    log::debug!("[{}]: Pending FQ_{} is removed expect Finished FQ_{}!", &file_basename, &mate, &mate);
+                                                    //TODO: Check file create somehow
+                                                    Ok(())
+                                                }
+                                                FileStatus::Finish => {
+                                                    log::warn!("[{}]: Remove finish FQ_{} file!", &file_basename, &mate);
+                                                    Err(FileError::RemoveFinishFile(path.as_ref().display().to_string()))
+                                                }
+                                            }
+                                        }
+                                        _ => {
+                                            Err(FileError::RemoveFinishFile(path.as_ref().display().to_string()))
+                                        }
+                                    }                                    
+                                } else {
+                                    Err(FileError::RemoveFinishFile(path.as_ref().display().to_string()))
+                                }
+                            }
+                            Err(file_vec_err) => {
+                                // TODO: handle each err in vector
+                                log::warn!("validate_file_pattern_error {:?}", &path.as_ref().display().to_string());
+								for err in file_vec_err.into_iter() {
+									log::warn!("{:?}",err);
+								}
+                                Err(FileError::FilePatternError(PatternError::Others(path.as_ref().display().to_string())))
+
+                            }
+                        
+                        }
+                    },
+                    Err(dir_vec_err) => {
+                        // TODO: handle each err in vector
+                        log::warn!("validate_dir_pattern_error {:?}", &path.as_ref().display().to_string());
+						for err in dir_vec_err.into_iter() {
+							log::warn!("{:?}",err);
+						}
+                        Err(FileError::FilePatternError(PatternError::Others(path.as_ref().display().to_string())))
+                    }
+                }
+
+            }
+                
+    }
     fn get_extension(path: &str) -> Result<FileType,FileError>{
             // set of regex to cactch all extension
             //              fastq_1             - 1.fq.gz
@@ -718,7 +828,7 @@ mod utils_checkfile {
          * Function take string of path and Regex pattern
          * Function return either regex::Capture result or vector of err
          */
-        let file_pattern = Regex::new(r"(?<tmp>\.?)(?<thaiomic_id>[DT][0-9]+)_(?<customer_id>[0-9]+)_?(?<thaiomic_code>[A-Z]*)_?_(?<customer_idx>[0-9]{2})-(?<flowcell_id>E[0-9]+[A-Z]*)_(?<lane_id>L[0-9]{2})_(?<flowcell_idx>[0-9]+)").unwrap();
+        let file_pattern = Regex::new(r"(?<tmp>\.?)(?<thaiomic_id>[DT][0-9]+)_(?<custom_name>[0-9AZ]*)_(?<customer_id>[0-9]+)_?(?<thaiomic_code>[A-Z]*)_?_(?<customer_idx>[0-9]{2})-(?<flowcell_id>E[0-9]+[A-Z]*)_(?<lane_id>L[0-9]{2})_(?<flowcell_idx>[0-9]+)").unwrap();
 
         let mut errors = Vec::new();
         if let Some(matched) = file_pattern.captures(path) {

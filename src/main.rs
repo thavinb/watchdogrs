@@ -10,9 +10,11 @@ use crate::mongo_handler::mongo_handler::{update_document, get_document};
 use notify::{*};
 use std::path::Path;
 use std::thread; 
+use std::time::Duration;
 
 pub mod watch;
-use crate::watch::watch::{watch, PathType};
+
+use watch::utils_checkfile::{PathType, handle_create_event, handle_modify_event, handle_remove_event};
 
 
 #[tokio::main]
@@ -56,46 +58,78 @@ async fn main() {
     let update_doc = doc! { "$set" : { "updated" : "true" } };
 
 	// cli argument setup
-	let path = std::env::args()
+	let watched_path = std::env::args()
 			.nth(1)
 			.expect("Argument 1 needs to be a path");
 
-	info!("Watching {path}");
+	
+	// Config watcher
+	let config = Config::default()
+		.with_poll_interval(Duration::from_secs(10));
+		// .with_compare_contents(true);
+	let (tx, rx) = std::sync::mpsc::channel();
 
-	if let Err(error) = watch(path) {
+	let mut watcher = PollWatcher::with_initial_scan(
+		tx,
+		config,
+		move |scan_event| {
+			log::info!("Scan event {scan_event:?}");
+		},
+	).unwrap();
+
+	log::info!("Watching {watched_path}");
+	if let Err(error) = watcher.watch(watched_path.as_ref(), RecursiveMode::Recursive) {
 		log::error!("Error: {error:?}");
 	}
+	thread::spawn( move ||
+		for poll_event in rx {
+			let mut event = poll_event.expect("Fatal: watcher err at unwrapping the event");
+			let watch_path = Path::new(&watched_path);
+				match event.kind {
+					EventKind::Create(kind) => {
+						handle_create_event(watch_path.as_ref(), event);
+							
+						// TODO: handle struct then upload  
+						// TODO: handle mongo status
 
-	// if let Err(err) = thread::spawn(|| watch(path)).join().unwrap() {
-	// 		eprintln!("Error in notify watch loop: {:?}", err);
-	// 	}
-// use std::time::Duration;
+					}
+					
+					EventKind::Modify(ModifyKind) => {
+					    // If path is dir
+					    // Check complete/incomplete tag
+					    //     Warn if incomplete!
+					    // else if file
+					    // check if it is incomplete fastq file 
+					    // if not warn!
+						handle_modify_event(watch_path.as_ref(), event);
+					}
+					EventKind::Remove(RemoveKind) => {
+					    // If path is dir
+					    // Warn!
+					    // else if file 
+					    // check if it is incomplete fastq file
+					    // if not warn!
+						handle_remove_event(watch_path.as_ref(), event);
+					},
+					// EventKind::Access(AccessKind) => {}
+					// EventKind::Any => {}
+					// EventKind::Other => {}
+					// // let data = check_event(&path, event).unwrap();
+					// // data update
+					// // mongohandiling(package, event)
+					_ => {
+						PathType::None;
+					}
+			}
+		}
+	);
+			// data checkfile
+			// mongohandling(package, scan)
 
-	// loop {
-	// 		thread::sleep(Duration::from_secs(1));
-	// 	}
+	loop{}
+    // running notify server
+	
 
 
-    // match watch(path) { 
-    //     Ok(pathtype) => {
-    //         if let PathType::File(e) = pathtype {
-    //             log::info!("Yay");
-    //         }
-    //         else {
-    //             // Dir file do nothing  
-    //         }
-    //     }
-    //     Err(pathtype) => {
-    //         // logerr 
-    //     }
-    // }
 
-
-    // let collection = db.collection::<Document>("run");
-    // let doc = collection.find_one(filter, None).await.unwrap();
-    // println!("{:?}", doc);
-
-    // update_document(&client, db, collection, "test_updated", update_doc).await;
-    // let entry = get_document(&client, db, collection, "test_updated").await;
-    // info!("{}",entry.get("updated").unwrap());
 }
