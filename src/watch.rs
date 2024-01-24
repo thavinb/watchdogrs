@@ -1,17 +1,82 @@
 pub mod utils_checkfile {
-
+    use serde::{Serialize, Deserialize};
     use std::fs::{File, self};
     use std::io::{self, Read, BufRead};
-	use std::path::{Path, PathBuf};
-    use regex::Captures;
-    use regex::{Regex, RegexSet};
+	use std::path::Path;
+    use regex::RegexSet;
+    use regex::Regex;
     use md5::{Md5, Digest};
-	use hex::ToHex;
-    use std::sync::mpsc::channel;
-    use std::thread;
     use human_bytes::human_bytes;
 
-    #[derive(Clone,Debug)]
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct FileInfo {
+        parent_dir: String,
+		pub basename: String,
+        thaiomic_id: Option<String>,
+        customer_id: Option<String>,
+        customer_idx: Option<String>,
+        flowcell_id: Option<String>,
+        flowcell_idx: Option<String>,
+        lane_id: Option<String>,
+        thaiomic_code: Option<String>,
+		mate: i32,
+        pub file_type: FileType,
+        pub file_path: String,
+        pub file_size: u64,
+        md5: Option<String>,
+        pub status: Option<String>
+    }
+
+	impl FileInfo {
+		// Define your new function here
+		fn new(
+            parent_dir: String, 
+            basename: String, 
+            thaiomic_id: Option<String>, 
+            customer_id: Option<String>, 
+            customer_idx: Option<String>, 
+            flowcell_id: Option<String>, 
+            flowcell_idx: Option<String>, 
+            lane_id: Option<String>, 
+            thaiomic_code: Option<String>, 
+            mate: i32, 
+            file_type: FileType, 
+            file_path: String,
+            file_size: u64,
+            md5: Option<String>, 
+            status: Option<String>
+        ) -> Self {
+			FileInfo {
+				parent_dir,
+				basename,
+				thaiomic_id,
+				customer_id,
+				customer_idx,
+				flowcell_id,
+				flowcell_idx,
+				lane_id,
+                thaiomic_code,
+				mate,
+				file_type,
+				file_path,
+                file_size,
+				md5,
+				status,
+			}
+		}
+
+		/*
+        Pretty print struct
+        fn display_info(&self) {
+            println!("File Type: {:?}", self.file_type);
+            println!("File Path: {:?}", self.file_path);
+            println!("MD5: {:?}", self.md5);
+            println!("Status: {:?}", self.status);
+        }
+        */
+	}
+
+    #[derive(Clone,Debug,Serialize, Deserialize)]
     pub enum FileType {
         FQ(i32, FileStatus),
         MD5_1(i32),
@@ -20,10 +85,11 @@ pub mod utils_checkfile {
         Report
     }
 
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
     pub enum FileStatus {
         Finish,
-        Pending
+        Pending,
+       
     }
 
     #[derive(Debug)]
@@ -34,7 +100,8 @@ pub mod utils_checkfile {
         FilePatternError(PatternError),
         PatternConflict(String),
         ModifyFinishFile(String),
-        RemoveFinishFile(String)
+        RemoveFinishFile(String),
+        FileNotExist(String)
             // ROOT 
             // INCORRECT DIR
     }
@@ -100,13 +167,12 @@ pub mod utils_checkfile {
             // check parent dir not mark as finish
             // check for only fastq 
             // warn if not 
-            if let Err(e) = validate_remove_file(watched_path, &path.as_ref()) {
-                PathType::File(Err(e))
-            } else {
-                PathType::None
-            }
+            
+            PathType::File(validate_remove_file(watched_path, &path.as_ref()))
+            
         }
     }
+
     fn validate_create_dir<P: AsRef<Path>>(watched_path: P, path: P) -> Result<(),DirError> {
         /* 
          * Function take watched path and event.paths from notify::Event crate 
@@ -156,73 +222,7 @@ pub mod utils_checkfile {
             }
     }
 	
-
-    #[derive(Debug)]
-    pub struct FileInfo {
-        parent_dir: String,
-		basename: String,
-        thaiomic_id: Option<String>,
-        customer_id: Option<String>,
-        customer_idx: Option<String>,
-        flowcell_id: Option<String>,
-        flowcell_idx: Option<String>,
-        lane_id: Option<String>,
-        thaiomic_code: Option<String>,
-		mate: i32,
-        file_type: FileType,
-        file_path: String,
-        file_size: u64,
-        md5: Option<String>,
-        status: Option<String>
-    }
-
-	impl FileInfo {
-		// Define your new function here
-		fn new(
-            parent_dir: String, 
-            basename: String, 
-            thaiomic_id: Option<String>, 
-            customer_id: Option<String>, 
-            customer_idx: Option<String>, 
-            flowcell_id: Option<String>, 
-            flowcell_idx: Option<String>, 
-            lane_id: Option<String>, 
-            thaiomic_code: Option<String>, 
-            mate: i32, 
-            file_type: FileType, 
-            file_path: String,
-            file_size: u64,
-            md5: Option<String>, 
-            status: Option<String>
-        ) -> Self {
-			FileInfo {
-				parent_dir,
-				basename,
-				thaiomic_id,
-				customer_id,
-				customer_idx,
-				flowcell_id,
-				flowcell_idx,
-				lane_id,
-                thaiomic_code,
-				mate,
-				file_type,
-				file_path,
-                file_size,
-				md5,
-				status,
-			}
-		}
-
-		// Pretty print struct
-		// fn display_info(&self) {
-		// 	println!("File Type: {:?}", self.file_type);
-		// 	println!("File Path: {:?}", self.file_path);
-		// 	println!("MD5: {:?}", self.md5);
-		// 	println!("Status: {:?}", self.status);
-		// }
-	}
-
+    
     pub fn validate_modify_file<P: AsRef<Path>>(watched_path: P, path: P) -> Result<FileInfo, FileError> {
         let parent_dir = path.as_ref().parent().unwrap();
             log::debug!("Check if file is created on watched directory...");
@@ -255,7 +255,7 @@ pub mod utils_checkfile {
                                 }
                                 log::debug!("File and its dir pattern matched!");
 
-								let (file_basename, [temp, thaiomic_id, custom_name, customer_id, thaiomic_code, customer_idx, flowcell_id, lane_id, flowcell_idx]) = file_captures.extract();
+								let (file_basename, [_temp, thaiomic_id, _custom_name, customer_id, thaiomic_code, customer_idx, flowcell_id, lane_id, flowcell_idx]) = file_captures.extract();
 
                                 // TODO: match file and dir pattern 
                                 // log::info!("{:?} is created on watched directory", file_captures.get(0).map_or("", |m| m.as_str())); 
@@ -269,27 +269,40 @@ pub mod utils_checkfile {
                                         FileType::FQ(mate, status) => {
                                             match status {
                                                 FileStatus::Pending => {
-                                                log::debug!("[{}]: Pending FQ_{} found!", &file_basename, &mate);
-                                                log::debug!("[{}] - Starting temporary FQSTAT_{} File size: {:?}", &file_basename, &mate, human_bytes(fs::metadata(&path).unwrap().len() as f64));
-                                                    let file_info = FileInfo::new(
-                                                        dir_basename.to_string(),
-                                                        String::from(&file_basename[1..].to_string()), // basename expected to be hidden - ".D2301_L01_56"
-                                                        wrap_string(thaiomic_id),
-                                                        wrap_string(customer_id),
-                                                        wrap_string(customer_idx),
-                                                        wrap_string(flowcell_id),
-                                                        wrap_string(flowcell_idx),
-                                                        wrap_string(lane_id),
-                                                        wrap_string(thaiomic_code),
-                                                        mate,
-                                                        filetype, 
-                                                        path.as_ref().display().to_string(), 
-                                                        fs::metadata(&path).unwrap().len(),
-                                                        None, 
-                                                        Some(String::from("Pending"))
-                                                    );
-													log::debug!("{:?}", file_info);
-                                                    Ok(file_info)
+                                                    log::debug!("[{}]: Pending FQ_{} found!", &file_basename, &mate);
+                                                    // Due to the race btw modifying and removing event:
+                                                    // Check if file not removed yet.
+                                                    if path.as_ref().exists() {                                               
+                                                        log::debug!(
+                                                            "[{}] - Starting temporary FQSTAT_{} File size: {:?}", 
+                                                            &file_basename, 
+                                                            &mate,
+                                                            human_bytes(fs::metadata(&path).unwrap().len() as f64 )
+                                                        );
+                                                            
+                                                        let file_info = FileInfo::new(
+                                                            dir_basename.to_string(),
+                                                            String::from(&file_basename[1..].to_string()), // basename for pending file is expected to be - ".D2301_L01_56"
+                                                            wrap_string(thaiomic_id),
+                                                            wrap_string(customer_id),
+                                                            wrap_string(customer_idx),
+                                                            wrap_string(flowcell_id),
+                                                            wrap_string(flowcell_idx),
+                                                            wrap_string(lane_id),
+                                                            wrap_string(thaiomic_code),
+                                                            mate,
+                                                            filetype, 
+                                                            path.as_ref().display().to_string(), 
+                                                            fs::metadata(&path).unwrap().len(),
+                                                            None, 
+                                                            Some(String::from("Pending"))
+                                                        );
+                                                        log::debug!("{:?}", file_info);
+                                                        Ok(file_info)
+                                                    } else {
+                                                        let err_txt = format!("{} No such file, This could be due to remove event occur before could read it.", path.as_ref().display().to_string());
+                                                        Err(FileError::FileNotExist(err_txt))
+                                                    }
                                                 }
                                                 FileStatus::Finish => {
                                                 log::warn!("[{}]: Written on finish FQ_{} file!", &file_basename, &mate);
@@ -348,10 +361,10 @@ pub mod utils_checkfile {
          *    Example:
          *
          *    T2302_NAME_81220513400257_RTC_56-E250004334_L01_56_1
-         *    |     |      |            |   |        |   |  |
-         *    ThaiOmicID   |            CustomerIDx  |   |  Mate
-         *          |      CustomerID   |   |        |   FlowcellIDx
-         *          CustomName        FlowcellID   LaneID
+         *    |     |      |            |   |  |          |   |  |
+         *    ThaiOmicID   |            |   CustomerIDx   |   |  Mate
+         *          |      CustomerID   |      |          |   FlowcellIDx
+         *          CustomName          |      FlowcellID LaneID
          *                              |
          *                              ThaiOmicCode
          *
@@ -600,10 +613,10 @@ pub mod utils_checkfile {
                     }
                 }
 
-            }
-                
+            }             
     }
-    pub fn validate_remove_file<P: AsRef<Path>>(watched_path: P, path: P) -> Result<(),FileError> {
+
+    pub fn validate_remove_file<P: AsRef<Path>>(watched_path: P, path: P) -> Result<FileInfo,FileError> {
         let parent_dir = path.as_ref().parent().unwrap();
             log::debug!("Check if file is created on watched directory...");
             if format!("{}/",parent_dir.display().to_string()) ==  watched_path.as_ref().display().to_string() {
@@ -651,7 +664,25 @@ pub mod utils_checkfile {
                                                 FileStatus::Pending => {
                                                     log::debug!("[{}]: Pending FQ_{} is removed expect Finished FQ_{}!", &file_basename, &mate, &mate);
                                                     //TODO: Check file create somehow
-                                                    Ok(())
+                                                    let file_info = FileInfo::new(
+                                                        dir_basename.to_string(),
+                                                        String::from(&file_basename[1..].to_string()), // basename expected to be hidden - ".D2301_L01_56"
+                                                        wrap_string(thaiomic_id),
+                                                        wrap_string(customer_id),
+                                                        wrap_string(customer_idx),
+                                                        wrap_string(flowcell_id),
+                                                        wrap_string(flowcell_idx),
+                                                        wrap_string(lane_id),
+                                                        wrap_string(thaiomic_code),
+                                                        mate,
+                                                        filetype, 
+                                                        path.as_ref().display().to_string(), 
+                                                        0,
+                                                        None, 
+                                                        Some(String::from("Pending"))
+                                                    );
+                                                    Ok(file_info)
+
                                                 }
                                                 FileStatus::Finish => {
                                                     log::warn!("[{}]: Remove finish FQ_{} file!", &file_basename, &mate);
@@ -660,7 +691,26 @@ pub mod utils_checkfile {
                                             }
                                         }
                                         _ => {
-                                            Err(FileError::RemoveFinishFile(path.as_ref().display().to_string()))
+                                            let file_info = FileInfo::new(
+                                                dir_basename.to_string(),
+                                                String::from(&file_basename[1..].to_string()), // basename expected to be hidden - ".D2301_L01_56"
+                                                wrap_string(thaiomic_id),
+                                                wrap_string(customer_id),
+                                                wrap_string(customer_idx),
+                                                wrap_string(flowcell_id),
+                                                wrap_string(flowcell_idx),
+                                                wrap_string(lane_id),
+                                                wrap_string(thaiomic_code),
+                                                0,
+                                                filetype, 
+                                                path.as_ref().display().to_string(), 
+                                                fs::metadata(&path).unwrap().len(),
+                                                None, 
+                                                Some(String::from("Pending"))
+                                            );
+                                            log::warn!("[{}]: Remove finish {} file!", &file_basename, &file_info.file_path);
+                                            Ok(file_info)
+                                            // Err(FileError::RemoveFinishFile(path.as_ref().display().to_string()))
                                         }
                                     }                                    
                                 } else {
@@ -692,6 +742,7 @@ pub mod utils_checkfile {
             }
                 
     }
+
     fn get_extension(path: &str) -> Result<FileType,FileError>{
             // set of regex to cactch all extension
             //              fastq_1             - 1.fq.gz
@@ -828,7 +879,7 @@ pub mod utils_checkfile {
          * Function take string of path and Regex pattern
          * Function return either regex::Capture result or vector of err
          */
-        let file_pattern = Regex::new(r"(?<tmp>\.?)(?<thaiomic_id>[DT][0-9]+)_(?<custom_name>[0-9AZ]*)_(?<customer_id>[0-9]+)_?(?<thaiomic_code>[A-Z]*)_?_(?<customer_idx>[0-9]{2})-(?<flowcell_id>E[0-9]+[A-Z]*)_(?<lane_id>L[0-9]{2})_(?<flowcell_idx>[0-9]+)").unwrap();
+        let file_pattern = Regex::new(r"(?<tmp>\.?)(?<thaiomic_id>[DT][0-9]+)_?(?<custom_name>[0-9AZ]*)_?_(?<customer_id>[0-9]+)_?(?<thaiomic_code>[A-Z]*)_?_(?<customer_idx>[0-9]{2})-(?<flowcell_id>E[0-9]+[A-Z]*)_(?<lane_id>L[0-9]{2})_(?<flowcell_idx>[0-9]+)").unwrap();
 
         let mut errors = Vec::new();
         if let Some(matched) = file_pattern.captures(path) {

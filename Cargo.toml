@@ -6,9 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mongodb = "2.6.1"
-tokio = { version = "1", features = ["full"] }
-# log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"]  } 
+mongodb = { version = "2.8.0", features = ["async-std-runtime"], default-features = false }
 log = { version = "0.4.2" }
 env_logger = "*"
 notify = "6.1.1"
@@ -20,3 +18,6 @@ hex-literal = "0.4.1"
 chrono = "0.4.31"
 lazy_static = "1.4.0"
 human_bytes = "0.4.3"
+serde = "1.0.195"
+futures = "0.3.30"
+
