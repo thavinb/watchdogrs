@@ -693,7 +693,7 @@ pub mod utils_checkfile {
                                         _ => {
                                             let file_info = FileInfo::new(
                                                 dir_basename.to_string(),
-                                                String::from(&file_basename[1..].to_string()), // basename expected to be hidden - ".D2301_L01_56"
+                                                file_basename.to_string(), 
                                                 wrap_string(thaiomic_id),
                                                 wrap_string(customer_id),
                                                 wrap_string(customer_idx),
@@ -704,7 +704,7 @@ pub mod utils_checkfile {
                                                 0,
                                                 filetype, 
                                                 path.as_ref().display().to_string(), 
-                                                fs::metadata(&path).unwrap().len(),
+                                                0,
                                                 None, 
                                                 Some(String::from("Pending"))
                                             );

@@ -205,7 +205,8 @@ fn main() {
 										log::warn!("unexpected file is removed: {:?}", fileinfo.file_type );
 										let query = doc! { 
 											"basename"  : fileinfo.basename, 
-											"file_type" : fileinfo.file_path											
+											"file_path" : fileinfo.file_path,
+											"status" : null								
 										};
 										let update_doc = doc! {
 											"$set" : {
@@ -213,6 +214,8 @@ fn main() {
 											}
 										};
 										let c = client.clone();
+										log::debug!("Calling DELETE mongo");
+										log::debug!("Delete entry with query {:?}", &query);
 										block_on(update_document(&c, db, collection, query, update_doc));
 										
 									}									
